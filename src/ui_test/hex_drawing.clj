@@ -1,6 +1,8 @@
 (ns ui-test.hex-drawing
   (:import [javax.swing JFrame JPanel JLabel SwingUtilities]
-           [java.awt BorderLayout Graphics Color BasicStroke Polygon Point]
+           [java.awt BorderLayout Graphics Graphics2D Color BasicStroke Polygon Point GraphicsEnvironment GraphicsDevice GraphicsConfiguration Transparency RenderingHints]
+           [java.awt.geom Path2D Path2D$Double Path2D$Float]
+           [java.awt.image BufferedImage]
            [java.awt.event MouseAdapter MouseEvent])
   (:require [ui-test.grid-protocol :as grid-protocol]
     [clojure.core.matrix :as m])
@@ -91,9 +93,27 @@
          y-values (int-array (map second coords))]
      (Polygon. x-values y-values 6)))
 
-(defn draw-hex-grid! [size g q-bounds r-bounds] 
-  (doseq [pos (hex-grid-positions size q-bounds r-bounds)]
-            (.draw g (horiz-hex size pos))))
+(defn default-graphics-config [] 
+  (.getDefaultConfiguration 
+    (.getDefaultScreenDevice 
+      (GraphicsEnvironment/getLocalGraphicsEnvironment))))
+
+(defmemo hex-image [size]
+  (with-hex-dim size 
+    (let [^GraphicsConfiguration config (default-graphics-config)
+          ^BufferedImage img (.createCompatibleImage config (* 2 B) (+ C (* 2 A)) Transparency/TRANSLUCENT)
+          ^Graphics2D g2 (.createGraphics img)]
+      (.setColor g2 (Color/black))
+      (.setRenderingHint g2 RenderingHints/KEY_ANTIALIASING RenderingHints/VALUE_ANTIALIAS_ON)
+      (.draw g2 (horiz-hex size [0 0]))
+      img)))
+
+(defn draw-hex-grid! [size ^Graphics2D g q-bounds r-bounds] 
+  (time 
+    (with-hex-dim size 
+      (let [hex-img (hex-image size)] 
+      (doseq [[x y] (hex-grid-positions size q-bounds r-bounds)]
+        (.drawImage g hex-img x y (* 2 B) (+ C (* 2 A)) nil))))))
 
 (defmethod grid-protocol/pixel->tile :pointy-hex
   [{:keys [size]} pixel]
@@ -112,6 +132,6 @@
   (hex-B size))
 
 (defmethod grid-protocol/draw-grid! :pointy-hex
-  [{:keys [size]} g q-bounds r-bounds]
+  [{:keys [size]} ^Graphics g q-bounds r-bounds]
   (draw-hex-grid! size g q-bounds r-bounds))
 

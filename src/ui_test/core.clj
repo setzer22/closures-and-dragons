@@ -1,3 +1,5 @@
+(set! *warn-on-reflection* true)
+
 (ns ui-test.core
   (:import [java.net URL]
            [javax.swing JFrame JPanel JLabel SwingUtilities]
@@ -5,6 +7,11 @@
            [java.awt BorderLayout Graphics Color BasicStroke Polygon Point Image AlphaComposite RenderingHints]
            [java.awt.event MouseAdapter MouseEvent])
   (:require [ui-test.grid-protocol :as grid]
+            [com.rpl.specter :as s]
+            [com.rpl.specter.macros :as sm :refer [transform select select-one]]
+            [ui-test.utils :as u :refer :all]
+            [ui-test.tokens :as t]
+            [ui-test.world-commands :as wc :refer :all]
             [ui-test.hex-drawing :as hex]
             [ui-test.square-grid :as square]
             [ui-test.swing-utils :as swu :refer :all]
@@ -12,35 +19,12 @@
   (:gen-class))
 
 (require 'spyscope.core)
+;TODO: Differentiate functions taking a world ref and functions taking a world value!
 
 (defmacro with-graphics [g & body]
   `(let [~g (.create ~g)]
      ~@body
      (.dispose ~g)))
-
-(defn id-generator [name]
-  (let [counter (atom 0)]
-    (fn []
-      (swap! counter inc)
-      (str name "-" @counter))))
-
-(def gen-token-id (id-generator "token"))
-
-(def images 
-  {:knight (ImageIO/read (URL. "file:///home/josep/Code/clojure/ui-test/res/knight.png"))
-   :goblin (ImageIO/read (URL. "file:///home/josep/Code/clojure/ui-test/res/goblin.png"))})
-
-(defrecord Token [id x y img])
-(defn mk-token [x y img]
-  (map->Token {:x x :y y :id (gen-token-id) :img (images img)}))
-
-(defn add-token [{:keys [tile-size dimensions tokens] :as world} tx ty img]
-  (let [[x y] (grid/tile->pixel world [tx ty])
-        new-token (mk-token x y img)]
-    (assoc world :tokens (assoc (:tokens world) [tx ty] new-token))))
-
-(defn draw-circle-centered [g x y d]
-  (.drawOval g (- x (/ d 2)) (- y (/ d 2)) d d))
 
 (defn custom-panel [world]
   (proxy [JPanel] [] 
@@ -52,36 +36,13 @@
           (.setColor g (Color/black))
           (.setStroke g (BasicStroke. 2))
           (.setRenderingHint g RenderingHints/KEY_ANTIALIASING RenderingHints/VALUE_ANTIALIAS_ON)
-          (grid/draw-grid! @world g [-10 10] [-10 10])
-          (doseq [{:keys [x y img] :as token} (vals tokens)]
-            (.drawImage g img (- x R) (- y R) (* 2 R) (* 2 R) nil)
-            (comment (draw-circle-centered g x y (* 2 R)))))))))
-
-(defn dist [{x1 :x y1 :y} {x2 :x y2 :y}]
-  (let [d1 (- x1 x2)
-        d2 (- y1 y2)]
-    (Math/sqrt (+ (* d1 d1) (* d2 d2)))))
+          (grid/draw-grid! @world g [0 20] [0 20])
+          (doseq [{:keys [x y img] :as token} (get-all-tokens @world)]
+            (.drawImage g img (- x R) (- y R) (* 2 R) (* 2 R) nil)))))))
 
 (defn mouse-position-string [world x y]
   (let [[q r] (grid/pixel->tile @world [x y])] 
     (str "x: " x ", y: " y " | q: " q " r:" r)))
-
-(defn dissoc-in
-  "Dissociates an entry from a nested associative structure returning a new
-  nested structure. keys is a sequence of keys. Any empty maps that result
-  will not be present in the new structure."
-  [m [k & ks :as keys]]
-  (if ks
-    (if-let [nextmap (get m k)]
-      (let [newmap (dissoc-in nextmap ks)]
-        (if (seq newmap)
-          (assoc m k newmap)
-          (dissoc m k)))
-      m)
-    (dissoc m k)))
-
-(defn remove-one-shot! [event-listeners event-name]
-  )
 
 (defn mouse-listener [world top-panel event-listeners] 
   (let [remove-one-shot! 
@@ -124,10 +85,10 @@
               [x y] [(.getX event) (.getY event)]
               tile-coords (grid/pixel->tile @world [x y])
               {:keys [tile-size]} @world
-              token (get (:tokens @world) tile-coords)]
+              token (get-one-token-at @world tile-coords)
+              loc (token-locator token tile-coords)]
           (when token 
-            (swap! world assoc-in [:tokens tile-coords] (assoc token :x x :y y))
-            (swap! world assoc :dragged-token-tile tile-coords))
+            (swap! world lift-token-at loc [x y]))
           (.repaint panel))))]
 
    :mouseReleased
@@ -135,14 +96,11 @@
       (fn [event world top-panel]
         (let [panel (find-component top-panel "grid-panel")
               [x y] [(.getX event) (.getY event)] 
-              dragged-token-old-tile (:dragged-token-tile @world)
-              dragged-token-new-tile (grid/pixel->tile @world [x y])
-              dragged-token (get (:tokens @world) dragged-token-old-tile)
-              [sx sy] (grid/snap-to-grid @world [x y])]
-          (when dragged-token 
-            (swap! world dissoc-in [:tokens dragged-token-old-tile])
-            (swap! world assoc-in [:tokens dragged-token-new-tile] (assoc dragged-token :x sx :y sy))
-            (swap! world dissoc :dragged-token-tile)
+              lifted-token-locator (:lifted-token-locator @world)
+              lifted-token-new-tile (grid/pixel->tile @world [x y])
+              new-token-pos (grid/snap-to-grid @world [x y])]
+          (when lifted-token-locator 
+            (swap! world drop-token-at lifted-token-locator lifted-token-new-tile new-token-pos)
             (.repaint panel)))))]
 
    :mouseDragged 
@@ -151,10 +109,9 @@
         (let [label (find-component top-panel "info-label")
               panel (find-component top-panel "grid-panel")
               [x y] [(.getX event) (.getY event)]
-              dragged-token-tile (:dragged-token-tile @world)
-              dragged-token (get (:tokens @world) dragged-token-tile)]
-          (when dragged-token 
-            (swap! world assoc-in [:tokens dragged-token-tile] (assoc dragged-token :x x :y y))
+              lifted-token-locator (:lifted-token-locator @world)]
+          (when lifted-token-locator
+            (swap! world token-motion lifted-token-locator [x y])
             (.repaint panel))
           (.setText label (mouse-position-string world x y)))))]
    :mouseMoved 

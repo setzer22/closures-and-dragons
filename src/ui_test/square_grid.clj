@@ -1,4 +1,8 @@
 (ns ui-test.square-grid
+  (:import [javax.swing JFrame JPanel JLabel SwingUtilities]
+           [java.awt BorderLayout Graphics Color BasicStroke Polygon Point]
+           [java.awt.event MouseAdapter MouseEvent])
+
   (:require [ui-test.grid-protocol :as grid-protocol]))
 
 ;(defmulti pixel->tile grid-type)
@@ -27,7 +31,7 @@
   (/ size 2))
 
 (defmethod grid-protocol/draw-grid! :square
-  [{:keys [size]} g [x-min x-max] [y-min y-max]]
+  [{:keys [size]} ^Graphics g [x-min x-max] [y-min y-max]]
   (let [y-min-pos (* size y-min)
         y-max-pos (* size y-max)
         x-min-pos (* size x-min)
