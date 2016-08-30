@@ -1,28 +1,24 @@
 # ui-test
 
-FIXME: description
+Closures & Dragons (provisional name) is a virtual, online, D&D board written in clojure using. Instead of providing a web application like many popular alternatives, C&D is a client-server based desktop application. It's still in Alpha and has a long way to go, so no serious usage should be considered yet.
 
 ## Installation
 
-Download from http://example.com/FIXME.
+Clone the repository and install all de dependencies with leiningen:
+
+```
+lein deps
+```
 
 ## Usage
 
-FIXME: explanation
+Launching a REPL should also launch the main GUI: 
 
-    $ java -jar ui-test-0.1.0-standalone.jar [args]
+```
+lein repl
+```
 
-## Options
-
-FIXME: listing of options this app accepts.
-
-## Examples
-
-...
-
-### Bugs
-
-...
+For now this is the only way to launch the program.
 
 ### Any Other Sections
 ### That You Think
@@ -30,7 +26,6 @@ FIXME: listing of options this app accepts.
 
 ## License
 
-Copyright © 2016 FIXME
+Copyright © 2016 Setzer22
 
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+Distributed under the GPU General Public License v3.0 (see LICENSE)
