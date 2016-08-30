@@ -1,4 +1,4 @@
-# ui-test
+# Closures & Dragons
 
 Closures & Dragons (provisional name) is a virtual, online, D&D board written in clojure using. Instead of providing a web application like many popular alternatives, C&D is a client-server based desktop application. It's still in Alpha and has a long way to go, so no serious usage should be considered yet.
 
