@@ -32,36 +32,45 @@
    :tx tx
    :ty ty})
 
+(defn get-locator-coordinates [world {:keys [tx ty]}]
+  (grid/tile->pixel world [tx ty]))
+
 (defn get-one-token-at [world pos]
   (first (get-tokens-at world pos)))
 
 (defn get-token-at [world {:keys [id tx ty] :as locator}]
   (select-one [s/ALL #(= (:id %) id)] (get-tokens-at world [tx ty])))
 
-;(defn move-token [world start-pos end-pos]
-  ;(let [token ]))
+(defn assoc-token-at [world {:keys [tx ty id] :as locator} token]
+  (assoc-in world [:tokens [tx ty] id] token))
 
-(defn lift-token-at [world {:keys [tx ty id] :as locator} mouse-pos]
-  (-> world 
-      (token-motion locator mouse-pos)
-      (assoc :lifted-token-locator locator)))
+(defn dissoc-token-at [world {:keys [tx ty id :as locator]}]
+  (dissoc-in world [:tokens [tx ty] id]))
+
+(defn move-token [world current-locator new-tile]
+  (let [token (get-token-at world current-locator)
+        new-locator (token-locator token new-tile)
+        [x y] (get-locator-coordinates world new-locator)
+        moved-token (assoc token :x x :y y)]
+    (-> world
+        (dissoc-token-at current-locator)
+        (assoc-token-at new-locator moved-token))))
 
 (defn get-locator-tile [{:keys [tx ty] :as locator}]
   [tx ty])
-
-(defn get-lifted-token [world]
-  (get-token-at world (:lifted-token-locator world)))
 
 (defn token-motion [world {:keys [tx ty id] :as locator} [new-x new-y]]
   (let [token (get-token-at world locator)
         moved-token (assoc token :x new-x :y new-y)]
     (assoc-token-at world locator moved-token)))
 
-(defn assoc-token-at [world {:keys [tx ty id] :as locator} token]
-  (assoc-in world [:tokens [tx ty] id] token))
+(defn get-lifted-token [world]
+  (get-token-at world (:lifted-token-locator world)))
 
-(defn dissoc-token-at [world {:keys [tx ty id :as locator]}]
-  (dissoc-in world [:tokens [tx ty] id]))
+(defn lift-token-at [world {:keys [tx ty id] :as locator} mouse-pos]
+  (-> world 
+      (token-motion locator mouse-pos)
+      (assoc :lifted-token-locator locator)))
 
 (defn drop-token-at [world locator new-tile [nx ny]]
   (let [lifted-token (get-token-at world locator)

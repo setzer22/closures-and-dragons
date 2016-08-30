@@ -6,9 +6,11 @@
            [javax.imageio ImageIO]
            [java.awt BorderLayout Graphics Color BasicStroke Polygon Point Image AlphaComposite RenderingHints]
            [java.awt.event MouseAdapter MouseEvent])
-  (:require [ui-test.grid-protocol :as grid]
+  (:require [clojure.core.async :as a :refer [<! >! <!! >!! go go-loop chan dropping-buffer]]
+            [ui-test.grid-protocol :as grid]
             [com.rpl.specter :as s]
             [com.rpl.specter.macros :as sm :refer [transform select select-one]]
+            [ui-test.repaint-channel :refer :all]
             [ui-test.utils :as u :refer :all]
             [ui-test.tokens :as t]
             [ui-test.world-commands :as wc :refer :all]
@@ -89,7 +91,7 @@
               loc (token-locator token tile-coords)]
           (when token 
             (swap! world lift-token-at loc [x y]))
-          (.repaint panel))))]
+          (repaint! world))))]
 
    :mouseReleased
    [(permanent-event 
@@ -101,7 +103,7 @@
               new-token-pos (grid/snap-to-grid @world [x y])]
           (when lifted-token-locator 
             (swap! world drop-token-at lifted-token-locator lifted-token-new-tile new-token-pos)
-            (.repaint panel)))))]
+            (repaint! world)))))]
 
    :mouseDragged 
    [(permanent-event 
@@ -112,7 +114,7 @@
               lifted-token-locator (:lifted-token-locator @world)]
           (when lifted-token-locator
             (swap! world token-motion lifted-token-locator [x y])
-            (.repaint panel))
+            (repaint! world))
           (.setText label (mouse-position-string world x y)))))]
    :mouseMoved 
    [(permanent-event 
@@ -123,18 +125,23 @@
 (defn show-gui [] 
   (SwingUtilities/invokeLater 
     (fn [] 
-      (def world 
-        (atom (-> {:grid-type :pointy-hex
-                   :size 30
-                   :dimensions [10 10]
-                   :transaction nil
-                   :tokens {}}
-                  (add-token 3 2 :goblin)
-                  (add-token 4 5 :goblin)
-                  (add-token 1 1 :knight))))
-      (def event-listeners 
-        (atom main-events))
-      (let [label (doto (JLabel. "Hello World!")
+      (let [repaint-channel (make-repaint-channel)
+            event-listeners (atom main-events)
+            world (atom (-> {:grid-type :pointy-hex
+                             :size 30
+                             :dimensions [10 10]
+                             :transaction nil
+                             :tokens {}
+                             :repaint-chanel repaint-channel}
+                            (add-token 3 2 :goblin)
+                            (add-token 4 5 :goblin)
+                            (add-token 1 1 :knight)))
+            __ (def world world)
+            __ (def repaint-channel repaint-channel)
+            __ (def event-listeners event-listeners)
+
+            ;; TODO: Swing GUI wrappers...
+            label (doto (JLabel. "Hello World!")
                     (.setName "info-label"))
             frame (JFrame. "Hello Swing!")
             top-panel (JPanel.)
@@ -150,7 +157,8 @@
         (.add frame top-panel)
         (.setVisible top-panel true)
         (.setVisible panel true)
-        (.setVisible frame true)))))
+        (.setVisible frame true)
+        (start-repaint-process! repaint-channel top-panel)))))
 
 (show-gui)
 
