@@ -20,10 +20,6 @@ lein repl
 
 For now this is the only way to launch the program.
 
-### Any Other Sections
-### That You Think
-### Might be Useful
-
 ## License
 
 Copyright © 2016 Setzer22
