@@ -1,5 +1,11 @@
 (ns ui-test.utils)
 
+(defn id-generator [name]
+  (let [counter (atom 0)]
+    (fn []
+      (swap! counter inc)
+      (str name "-" @counter))))
+
 (defn dissoc-in
   "Dissociates an entry from a nested associative structure returning a new
   nested structure. keys is a sequence of keys. Any empty maps that result

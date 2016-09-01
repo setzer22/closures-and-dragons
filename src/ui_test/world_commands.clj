@@ -6,9 +6,9 @@
             [com.rpl.specter.macros :as sm :refer [transform select select-one]]))
 
 
-(defn add-token [{:keys [tile-size dimensions tokens] :as world} tx ty img]
+(defn add-token [{:keys [tile-size dimensions tokens] :as world} id-gen tx ty img]
   (let [[x y] (grid/tile->pixel world [tx ty])
-        new-token (mk-token x y img)
+        new-token (mk-token id-gen x y img)
         tokens-at-pos (get world [tx ty] {})]
     (assoc-in world [:tokens [tx ty]] (assoc tokens-at-pos (:id new-token) new-token))))
 

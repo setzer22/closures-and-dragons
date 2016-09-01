@@ -12,4 +12,4 @@
       (recur (<! repaint-channel)))) )
 
 (defn repaint! [world]
-  (>!! (:repaint-chanel @world) true))
+  (>!! (:repaint-channel @world) true))

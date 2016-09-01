@@ -1,4 +1,5 @@
 (set! *warn-on-reflection* true)
+(require 'spyscope.core)
 
 (ns ui-test.core
   (:import [java.net URL]
@@ -14,13 +15,14 @@
             [ui-test.utils :as u :refer :all]
             [ui-test.tokens :as t]
             [ui-test.world-commands :as wc :refer :all]
+            [ui-test.world-actions :as wa :refer :all]
+            [ui-test.server-communication :as sc :refer :all]
             [ui-test.hex-drawing :as hex]
             [ui-test.square-grid :as square]
             [ui-test.swing-utils :as swu :refer :all]
             [ui-test.transaction :as transaction :refer [transaction]])
   (:gen-class))
 
-(require 'spyscope.core)
 ;TODO: Differentiate functions taking a world ref and functions taking a world value!
 
 (defmacro with-graphics [g & body]
@@ -103,6 +105,7 @@
               new-token-pos (grid/snap-to-grid @world [x y])]
           (when lifted-token-locator 
             (swap! world drop-token-at lifted-token-locator lifted-token-new-tile new-token-pos)
+            (>!! (:app->server (:action-channels @world)) (mk-action "move-token" [lifted-token-locator lifted-token-new-tile]))
             (repaint! world)))))]
 
    :mouseDragged 
@@ -122,23 +125,43 @@
         (let [label (find-component top-panel "info-label")] 
           (.setText label (mouse-position-string world (.getX event) (.getY event))))))]})
 
-(defn show-gui [] 
+(comment (>!! (:app->server (:action-channels @-world)) (mk-action "move-token" [{:tx 10 :ty 10 :id "token-1"} [5 10]]))
+         (alter-var-root #'*out* (constantly *out*))
+         (swap! -world execute-action (mk-action "move-token" [{:tx 4 :ty 5 :id "token-2"} [0 0]]))
+         (repaint! -world)
+         (pprint @-world)
+         (:client @-world)
+         (>!! (:write-chan (:client @-world)) "pet")
+         (<!! (:read-chan (:client @-world))))
+
+(defn run-the-server! []
+  (def server (create-server! 8080)))
+
+(comment ((:shutdown server)))
+
+(defn start-gui! [] 
   (SwingUtilities/invokeLater 
     (fn [] 
       (let [repaint-channel (make-repaint-channel)
+            action-channels (make-action-channels)
             event-listeners (atom main-events)
+            client (create-client! "127.0.0.1" 8080)
+            id-gen (t/make-token-id-generator)
             world (atom (-> {:grid-type :pointy-hex
                              :size 30
                              :dimensions [10 10]
                              :transaction nil
                              :tokens {}
-                             :repaint-chanel repaint-channel}
-                            (add-token 3 2 :goblin)
-                            (add-token 4 5 :goblin)
-                            (add-token 1 1 :knight)))
-            __ (def world world)
-            __ (def repaint-channel repaint-channel)
-            __ (def event-listeners event-listeners)
+                             :repaint-channel repaint-channel
+                             :action-channels action-channels
+                             :client client}
+                            (add-token id-gen 3 2 :goblin)
+                            (add-token id-gen 4 5 :goblin)
+                            (add-token id-gen 1 1 :knight)))
+            __ (def -world world)
+            ;__ (def repaint-channel repaint-channel)
+            ;__ (def action-channel action-channel)
+            ;__ (def event-listeners event-listeners)
 
             ;; TODO: Swing GUI wrappers...
             label (doto (JLabel. "Hello World!")
@@ -148,7 +171,7 @@
             panel (doto (custom-panel world)
                     (.setName "grid-panel"))
             listener (mouse-listener world top-panel event-listeners)]
-        (def -top-panel top-panel); TODO
+        ;(def -top-panel top-panel)
         (.addMouseListener panel listener)
         (.addMouseMotionListener panel listener)
         (.setLayout top-panel (BorderLayout.))
@@ -158,9 +181,11 @@
         (.setVisible top-panel true)
         (.setVisible panel true)
         (.setVisible frame true)
-        (start-repaint-process! repaint-channel top-panel)))))
+        (start-repaint-process! repaint-channel top-panel)
+        (start-action-receiver! action-channels world)
+        (bind-client! client action-channels)))))
 
-(show-gui)
+(start-gui!)
 
 (defn -main
   "I don't do a whole lot ... yet."

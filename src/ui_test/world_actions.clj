@@ -6,33 +6,43 @@
 (def action-fns
  {"move-token" wc/move-token})
 
+;TODO: NEEDS REPAINT IS NOT IMPLEMENTED RIGHT
 (defn mk-action 
   ([action-name action-args]
    {:action-name action-name
-    :action-args action-args})
+    :action-args action-args
+    :needs-repaint? true; Temporary patch
+    })
   ([action-name action-args needs-repaint?]
    (assoc (mk-action action-name action-args) 
           :needs-repaint? needs-repaint?)))
 
 (defn execute-action [world {:keys [action-name, action-args] :as action}]
-  (let [action-fn #spy/d (get action-fns action-name)]
+  (let [action-fn (get action-fns action-name)]
     (apply action-fn world action-args)))
 
-(defn start-action-receiver! [world-atom input-channel]
-  (go 
-    (loop [action (<! input-channel)]
-      (when action 
-        (swap! world-atom execute-action action)
-        (when (:needs-repaint? action)
-          (repaint! world-atom))
-        (recur (<! input-channel))))))
+(defn start-action-receiver! [{:keys [server->app]} world-atom]
+  (a/go-loop []
+             (do (println "iteration wat")
+                 (when-let [action (<! server->app)] 
+                   (println "action-receiver: " action)
+                   (swap! world-atom execute-action action)
+                   (println "updated world.")
+                   (when (:needs-repaint? action)
+                     (repaint! world-atom))
+                   (println "repainted!")
+                   (recur)))))
 
-(def test-channel (chan))
-(def world ui-test.core/world)
+(defn make-action-channels []
+  {:app->server (chan 32)
+   :server->app (chan 32)})
 
-(def locator (token-locator (get-one-token-at @world [5 5]) [5 5]))
+;(def -world ui-test.core/-world)
+;(def test-channel (:app->server (:action-channels @world)))
 
-(start-action-receiver! world test-channel)
+;(def locator (token-locator (get-one-token-at @world [1 1]) [1 1]))
 
-(>!! test-channel (mk-action "move-token" [locator [1 1]] true))
+;(start-action-receiver! world test-channel)
+
+;(>!! test-channel (mk-action "move-token" [locator [5 5]] true))
 
