@@ -11,6 +11,7 @@
                  [net.mikera/vectorz-clj "0.45.0"]
                  [net.mikera/core.matrix "0.54.0"]]
   :jvm-opts ["-Dsun.java2d.opengl=true"]
+  :java-source-paths ["src/main/java"]
   :main ^:skip-aot ui-test.core
   :target-path "target/%s"
   :profiles {:uberjar {:aot :all}})

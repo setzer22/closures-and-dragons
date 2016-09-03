@@ -3,7 +3,7 @@
 
 (ns ui-test.core
   (:import [java.net URL]
-           [javax.swing JFrame JPanel JLabel SwingUtilities]
+           [javax.swing JFrame JPanel JLabel SwingUtilities UIManager]
            [javax.imageio ImageIO]
            [java.awt BorderLayout Graphics Color BasicStroke Polygon Point Image AlphaComposite RenderingHints]
            [java.awt.event MouseAdapter MouseEvent])
@@ -14,6 +14,7 @@
             [ui-test.repaint-channel :refer :all]
             [ui-test.utils :as u :refer :all]
             [ui-test.tokens :as t]
+            [ui-test.swing-wrappers :refer :all]
             [ui-test.world-commands :as wc :refer :all]
             [ui-test.world-actions :as wa :refer :all]
             [ui-test.server-communication :as sc :refer :all]
@@ -25,24 +26,47 @@
 
 ;TODO: Differentiate functions taking a world ref and functions taking a world value!
 
-(defmacro with-graphics [g & body]
-  `(let [~g (.create ~g)]
-     ~@body
-     (.dispose ~g)))
+;TODO: Things that need to be done
+; USER IDENTIFICATION AND THE GAME MASTER: 
+;   - Find a way to make a client the "game master" (the one who creates the game)
+;   - For now, the first connected id will be recognised as the GM. This will change whenever game creation
+;     is implemented.
+;   - The server should also be more customisable and launchable as a sepparate program if necessary.
+;   - Since there are reasons for client sepparation, a user system should be designed. 
+;   - When connecting to the server, a client receives his unique identifier which will act as the user id for all
+;     identification purposes. That will change whenever persistent data needs to be saved between sessions, but 
+;     for now it's OK.
 
-(defn custom-panel [world]
-  (proxy [JPanel] [] 
-    (paintComponent [^Graphics g] 
-      (proxy-super paintComponent g)
-      (let [{:keys [dimensions tile-size tokens]} @world
-            R (grid/token-radius @world)] 
-        (with-graphics g 
-          (.setColor g (Color/black))
-          (.setStroke g (BasicStroke. 2))
-          (.setRenderingHint g RenderingHints/KEY_ANTIALIASING RenderingHints/VALUE_ANTIALIAS_ON)
-          (grid/draw-grid! @world g [0 20] [0 20])
-          (doseq [{:keys [x y img] :as token} (get-all-tokens @world)]
-            (.drawImage g img (- x R) (- y R) (* 2 R) (* 2 R) nil)))))))
+; WORLD SYNCHRONISATION AND CONSISTENCY ENFORCEMENT:
+;   - Whenever an additional client besides the master connects to the game, he receives the world
+;     as an update. From that point, all actions should be synced with the server.
+;   - Each action must incorporate a validator. For example, it "move-token" moves a token with a 
+;     given locator from there to another tile, the token at the locator must exist and the new location
+;     must be free. If the validator fails, that means the world was out-of-sync and must be resync'd
+;   - Whenever a disconnect event is received, the client becomes disconnected and all his actions one-shot-event
+;     the board have no effect. Whenever he gets a connected event back again, he receives the GM's state of the
+;     world, and all his changes during desconnexion are discarded.
+
+;   - From all the behavior above, the following functions will need to be implemented:
+;    
+;  send-world :: [] -> stripped-world
+;  replicate-world :: stripped-world -> world
+;  
+;   - Some things need to be stripped from the world and will need to be replicated at the client's site. i.e: 
+;     the channels, and anything that's a java object.
+;   - For the reason above, images should be kept in a local database and not as a reference in the token. The tokens
+;     should only store the keyword for such database.
+
+; GUI EXPANSION AND THE CHAT:
+;   - Once we have users, the GUI should be expanded, adding a chat, a GM panel and a user panel.
+;   - A user may select his username in the user panel so the GM can refer to him with the user and not the ID.
+;   - The chat must accept normal text and commands/macros.
+
+; TOWARDS A BETTER GUI LIBRARY:
+;   - All those UI changes will probably require a rework of the GUI so it's more easily constructed.
+;   - A good initial approach for that should be statically building a Swing Object from clojure maps/arrays but Once
+;     we have that, use the Swing object to perform updates/lookups with maybe some clojure wrapper function just
+;     for the sake of simplicity.
 
 (defn mouse-position-string [world x y]
   (let [[q r] (grid/pixel->tile @world [x y])] 
@@ -147,6 +171,7 @@
             event-listeners (atom main-events)
             client (create-client! "127.0.0.1" 8080)
             id-gen (t/make-token-id-generator)
+            id-atom (atom nil)
             world (atom (-> {:grid-type :pointy-hex
                              :size 30
                              :dimensions [10 10]
@@ -154,9 +179,10 @@
                              :tokens {}
                              :repaint-channel repaint-channel
                              :action-channels action-channels
-                             :client client}
+                             :client client
+                             :id-atom id-atom}
                             (add-token id-gen 3 2 :goblin)
-                            (add-token id-gen 4 5 :goblin)
+                            (add-token id-gen 4 5 :knight)
                             (add-token id-gen 1 1 :knight)))
             __ (def -world world)
             ;__ (def repaint-channel repaint-channel)
@@ -164,26 +190,37 @@
             ;__ (def event-listeners event-listeners)
 
             ;; TODO: Swing GUI wrappers...
-            label (doto (JLabel. "Hello World!")
-                    (.setName "info-label"))
-            frame (JFrame. "Hello Swing!")
-            top-panel (JPanel.)
-            panel (doto (custom-panel world)
-                    (.setName "grid-panel"))
-            listener (mouse-listener world top-panel event-listeners)]
-        ;(def -top-panel top-panel)
+            info-label (label "info-label" "Hello World!") 
+            panel (grid-panel "grid-panel" world)
+            top-panel (grid-bag-layout 
+                        [panel
+                         [:position 0 0]
+                         [:span 5 5]
+                         ]
+                        [info-label
+                         [:position 0 10]]
+                        [(label "Grid dimensions:")
+                         [:position 5 0]]
+                        [(label "Tile size:")
+                         [:position 5 1]]
+                        [(label "Another field:")
+                         [:position 5 2]]
+                        [(text-field "25x25")
+                         [:position 6 0]]
+                        [(text-field "32px")
+                         [:position 6 1]]
+                        [(text-field "foo()")
+                         [:position 6 2]])
+            listener (mouse-listener world top-panel event-listeners)
+            ]
         (.addMouseListener panel listener)
         (.addMouseMotionListener panel listener)
-        (.setLayout top-panel (BorderLayout.))
-        (.add top-panel panel BorderLayout/CENTER)
-        (.add top-panel label BorderLayout/SOUTH)
-        (.add frame top-panel)
-        (.setVisible top-panel true)
-        (.setVisible panel true)
-        (.setVisible frame true)
+        (make-window! top-panel "Closures & Dragons")
+        
+        (UIManager/setLookAndFeel (UIManager/getSystemLookAndFeelClassName))
         (start-repaint-process! repaint-channel top-panel)
         (start-action-receiver! action-channels world)
-        (bind-client! client action-channels)))))
+        (bind-client! client action-channels id-atom)))))
 
 (start-gui!)
 

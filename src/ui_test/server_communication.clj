@@ -21,7 +21,9 @@
 (defn start-connection! [connection alive-connections-atom]
   (let [id (generate-connection-id)
         connection (assoc connection :id id)]
-    (swap! alive-connections-atom assoc id connection)
+    (if (= @alive-connections-atom {})
+      (swap! alive-connections-atom assoc id (assoc connection :game-master true))
+      (swap! alive-connections-atom assoc id (assoc connection :game-master false)))
     (>!! (:write-chan connection) (edn->bytes {:connection true, :id id}))
     (a/go-loop 
       []
@@ -75,17 +77,23 @@
 (defn action? [maybe-action]
   (and (map? maybe-action) (:action-name maybe-action) (:action-args maybe-action)))
 
-(defn bind-client! [client action-channel]
-  (a/go-loop []
-    (when-let [action (<! (:read-chan client))]
-      (println "got-from-server: " action)
-      (when (action? action) (>! (:server->app action-channel) action)) ; The action? check shouldn't go here...
+(defn connection? [maybe-connection]
+  (and (map? maybe-connection) (= true (:connection maybe-connection)) (:id maybe-connection)))
+
+(defn bind-client! [client action-channel id-atom]
+  (a/go-loop 
+    []
+    (when-let [response (<! (:read-chan client))]
+      (println "got-from-server["@id-atom"]: " response)
+      (cond 
+        (and (action? response) (not= (:id response) (:id @id-atom))) (>! (:server->app action-channel) response)
+        (connection? response) (swap! id-atom (constantly (:id response))))
       (recur)))
   (a/go-loop 
     []
     (when-let [action (<! (:app->server action-channel))]
-      (println "going to server: " action)
-      (>! (:write-chan client) action)
+      (println "going to server["@id-atom"]: " action)
+      (>! (:write-chan client) (assoc action :id @id-atom))
       (recur))))
 
 
